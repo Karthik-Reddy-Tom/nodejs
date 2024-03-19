@@ -1,0 +1,62 @@
+pipeline {
+    agent Dev
+
+    environment {
+        username = credentials('docker-hub-username')
+        password = credentials('docker-hub-password')
+    }
+    
+triggers {
+        githubPush() // Trigger on main branch changes
+    }
+
+    stages {
+        stage('Git Checkout') {
+            steps {
+                checkout([$class: 'GitSCM', branches: [[name: 'main']], userRemoteConfigs: [[url: 'https://github.com/Karthik-Reddy-Tom/nodejs.git']]])
+            }
+        }
+
+        stage('Containerize the Client App') {
+            steps {
+                sh 'cd client'
+                sh 'npm i'
+                sh 'docker build -t npm-client .'
+                sh 'docker login -u $username -p $password'
+                sh 'docker tag npm-client:latest reddykarthikc/npm-client:latest'
+                sh 'docker push reddykarthikc/npm-client:latest'
+            }
+        }
+
+        stage('Containerize the Server App') {
+            steps {
+                sh 'cd server'
+                sh 'npm i'
+                sh 'docker build -t npm-server .'
+                sh 'docker login -u $username -p $password'
+                sh 'docker tag npm-server:latest reddykarthikc/npm-server:latest'
+                sh 'docker push reddykarthikc/npm-server:latest'
+            }
+        }
+
+        stage('Deploy QA Cluster') {
+            agent {
+                label 'my-QA-agent' 
+            }
+            steps {
+		sh 'kubectl apply -f db-secrets.yaml'
+                sh 'kubectl apply -f deployment.yaml'
+            }
+        }
+
+        stage('Deploy PROD Cluster') {
+            agent {
+                label 'my-PROD-agent' 
+            }
+            steps {
+		sh 'kubectl apply -f db-secrets.yaml'
+                sh 'kubectl apply -f deployment.yaml'
+            }
+        }
+    }
+}
